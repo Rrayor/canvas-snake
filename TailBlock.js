@@ -1,5 +1,4 @@
 import { ctx } from '.';
-import { restart } from './game';
 import GameObject from './GameObject';
 import BoxCollider from './physics/BoxCollider';
 import Rectangle from './physics/Rectangle';

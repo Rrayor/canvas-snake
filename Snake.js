@@ -1,6 +1,5 @@
 import { restart } from './game'
 import { canvas, ctx } from './index'
-import { destroyGameObject, getGameObjectByName } from './gameObjectManager'
 import GameObject from './GameObject'
 import BoxCollider from './physics/BoxCollider'
 import Rectangle from './physics/Rectangle'

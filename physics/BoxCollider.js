@@ -1,8 +1,8 @@
 import Collider from './Collider'
 import Rectangle from './Rectangle'
 
-import { canvas, ctx } from '../index'
-import { registerNewPosition } from './collisionMatrix'
+import { debugMode } from '../settings'
+import { drawCustomRect } from '../utils/debug'
 
 export default class BoxCollider extends Collider {
 
@@ -14,15 +14,10 @@ export default class BoxCollider extends Collider {
     }
 
     tick() {
-        this.shape.x = this.gameObject.x
-        this.shape.y = this.gameObject.y
-        this.cells = registerNewPosition(this)
+        super.tick()
 
-
-        ctx.beginPath();
-        ctx.lineWidth = "1";
-        ctx.strokeStyle = "red";
-        ctx.rect(this.shape.x, this.shape.y, this.shape.width, this.shape.height)
-        ctx.stroke();
+        if (debugMode) {
+            drawCustomRect(this.shape.x, this.shape.y, this.shape.width, this.shape.height, 1, 'red')
+        }
     }
 }

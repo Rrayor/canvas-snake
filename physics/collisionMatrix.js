@@ -1,5 +1,6 @@
 import { rectanglesOverlap } from './geometry'
-import { ctx } from '../index'
+import { canvasSize, debugMode } from '../settings'
+import { drawCustomRect } from '../utils/debug'
 
 const collisionColCount = 10
 const collisionRowCount = 10
@@ -31,18 +32,19 @@ export const setupCollisionMatrix = (canvasWidth, canvasHeight) => {
     }
 }
 
-export const registerNewPosition = collider => {
-
+const removeColliderFromOldCells = collider => {
     for (const cell of collider.cells) {
         collisionMatrix[cell.y][cell.x].colliders = collisionMatrix[cell.y][cell.x].colliders.filter(c => c.gameObject.name !== collider.gameObject.name)
     }
+}
 
+const calculateCells = collider => {
     const colliderPoints = collider.shape.getPoints()
 
-    const minX = Math.floor(colliderPoints.minX / (640 / collisionColCount)) //TODO: magic numbers
-    const minY = Math.floor(colliderPoints.minY / (480 / collisionRowCount))
-    const maxX = Math.floor(colliderPoints.maxX / (640 / collisionColCount))
-    const maxY = Math.floor(colliderPoints.maxY / (480 / collisionRowCount))
+    const minX = Math.floor(colliderPoints.minX / (canvasSize.width / collisionColCount))
+    const minY = Math.floor(colliderPoints.minY / (canvasSize.height / collisionRowCount))
+    const maxX = Math.floor(colliderPoints.maxX / (canvasSize.width / collisionColCount))
+    const maxY = Math.floor(colliderPoints.maxY / (canvasSize.height / collisionRowCount))
 
     const cells = [
         { x: minX, y: minY },
@@ -51,80 +53,99 @@ export const registerNewPosition = collider => {
         { x: maxX, y: maxY }
     ]
 
-    for (const cell of cells) {
-        collisionMatrix[cell.y][cell.x].colliders = collisionMatrix[cell.y][cell.x].colliders.filter(c => c.gameObject.name !== collider.gameObject.name)
-    }
+    return cells
+}
 
-    colliderList = colliderList.filter(c => c.gameObject.name !== collider.gameObject.name)
-
+const addColliderToCells = (collider, cells) => {
     for (const cell of cells) {
         const existsInCell = collisionMatrix[cell.y][cell.x].colliders.some(c => c.gameObject.name === collider.gameObject.name)
 
         if (!existsInCell)
             collisionMatrix[cell.y][cell.x].colliders.push(collider)
     }
+}
 
+const addColliderToList = collider => {
     const existsInList = colliderList.some(c => c.gameObject.name === collider.gameObject.name)
 
     if (!existsInList)
         colliderList.push(collider)
+}
+
+export const registerNewPosition = collider => {
+    removeColliderFromOldCells(collider)
+
+    //Calculate cells, the collider is currently in
+    const cells = calculateCells(collider)
+
+    addColliderToCells(collider, cells)
+    addColliderToList(collider)
 
     return cells
+}
+
+const backwardCellLoop = (y, x, collider1Idx, collider2Idx, rectangle1Points) => {
+    const rectangle2Points = collisionMatrix[y][x].colliders[collider2Idx].shape.getPoints()
+
+    // In debug mode make second currently checked collider blue
+    if (debugMode) {
+        drawCustomRect(rectangle2Points.minX, rectangle2Points.minY, rectangle2Points.maxX - rectangle2Points.minX, rectangle2Points.maxY - rectangle2Points.minY, 2, 'blue')
+    }
+
+    const overlapping = rectanglesOverlap(
+        rectangle1Points.minX, rectangle1Points.maxX, rectangle1Points.minY, rectangle1Points.maxY,
+        rectangle2Points.minX, rectangle2Points.maxX, rectangle2Points.minY, rectangle2Points.maxY
+    )
+
+    if (overlapping) {
+        collisionMatrix[y][x].colliders[collider1Idx].onCollision(collisionMatrix[y][x].colliders[collider2Idx])
+        collisionMatrix[y][x].colliders[collider2Idx].onCollision(collisionMatrix[y][x].colliders[collider1Idx])
+    }
+}
+
+const forwardCellLoop = (y, x, collider1Idx) => {
+    // Make grid cell orange where collision can happen if in debug mode
+    if (debugMode) {
+        drawCustomRect(collisionMatrix[y][x].x, collisionMatrix[y][x].y, colSize, rowSize, 1, 'orange')
+    }
+
+    const rectangle1Points = collisionMatrix[y][x].colliders[collider1Idx].shape.getPoints()
+
+    // In debug mode make first currently checked collider pink
+    if (debugMode) {
+        drawCustomRect(rectangle1Points.minX, rectangle1Points.minY, rectangle1Points.maxX - rectangle1Points.minX, rectangle1Points.maxY - rectangle1Points.minY, 2, 'pink')
+    }
+
+    // Start a backward loop to check every collider in cell against current collider
+    for (let collider2Idx = collisionMatrix[y][x].colliders.length - 1; collider2Idx > collider1Idx; collider2Idx--) {
+        backwardCellLoop(y, x, collider1Idx, collider2Idx, rectangle1Points)
+    }
+}
+
+const cellTick = (y, x) => {
+    for (let collider1Idx = 0; collider1Idx < collisionMatrix[y][x].colliders.length; collider1Idx++) {
+        // No collision can happen with less than 2 colliders
+        if (collisionMatrix[y][x].colliders.length < 2)
+            continue
+
+        forwardCellLoop(y, x, collider1Idx)
+    }
 }
 
 export const tick = () => {
 
     for (let y = 0; y < collisionColCount; y++) {
         for (let x = 0; x < collisionRowCount; x++) {
+            // Render grid of cells in debug mode
+            if (debugMode) {
+                drawCustomRect(collisionMatrix[y][x].x, collisionMatrix[y][x].y, colSize, rowSize, 1, 'purple')
+            }
 
-            ctx.beginPath();
-            ctx.lineWidth = "1";
-            ctx.strokeStyle = "purple";
-            ctx.rect(collisionMatrix[y][x].x, collisionMatrix[y][x].y, colSize, rowSize)
-            ctx.stroke();
-
+            // No further work required this iteration because no colliders are present in this cell
             if (collisionMatrix[y][x].colliders.length <= 0)
                 continue
 
-            for (let i = 0; i < collisionMatrix[y][x].colliders.length; i++) {
-
-                if (collisionMatrix[y][x].colliders.length < 2)
-                    continue
-
-                ctx.beginPath();
-                ctx.lineWidth = "1";
-                ctx.strokeStyle = "orange";
-                ctx.rect(collisionMatrix[y][x].x, collisionMatrix[y][x].y, colSize, rowSize)
-                ctx.stroke();
-
-                let rectangle1Points = collisionMatrix[y][x].colliders[i].shape.getPoints()
-
-                ctx.beginPath();
-                ctx.lineWidth = "2";
-                ctx.strokeStyle = "pink";
-                ctx.rect(rectangle1Points.minX, rectangle1Points.minY, rectangle1Points.maxX - rectangle1Points.minX, rectangle1Points.maxY - rectangle1Points.minY)
-                ctx.stroke();
-
-                for (let j = collisionMatrix[y][x].colliders.length - 1; j > i; j--) {
-                    let rectangle2Points = collisionMatrix[y][x].colliders[j].shape.getPoints()
-
-                    ctx.beginPath();
-                    ctx.lineWidth = "2";
-                    ctx.strokeStyle = "blue";
-                    ctx.rect(rectangle2Points.minX, rectangle2Points.minY, rectangle2Points.maxX - rectangle2Points.minX, rectangle2Points.maxY - rectangle2Points.minY)
-                    ctx.stroke();
-
-                    let overlapping = rectanglesOverlap(
-                        rectangle1Points.minX, rectangle1Points.maxX, rectangle1Points.minY, rectangle1Points.maxY,
-                        rectangle2Points.minX, rectangle2Points.maxX, rectangle2Points.minY, rectangle2Points.maxY
-                    )
-
-                    if (overlapping) {
-                        collisionMatrix[y][x].colliders[i].onCollision(collisionMatrix[y][x].colliders[j])
-                        collisionMatrix[y][x].colliders[j].onCollision(collisionMatrix[y][x].colliders[i])
-                    }
-                }
-            }
+            cellTick(y, x)
         }
     }
 }
